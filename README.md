@@ -2,8 +2,8 @@
 
 Go to the latest release *via* the "Releases" tab, then:
 
-1. Download the source code file bundle (```.zip``` or ```.tar.gz``` format) and extract/unpack the "Images" folder.
-2. Download one of the executables (```.exe```) and save to the same folder as the "Images" folder.
+1. Download the source code file bundle (```.zip``` or ```.tar.gz``` format).
+2. Download one of the executables (```.exe```).
 3. Double-click the ```.exe``` file and ```StrEmbed-5-5``` will run.
 
 ___
@@ -30,7 +30,7 @@ ___
 
 <b>This research is supported by the UK Engineering and Physical Sciences Research Council (EPSRC) under grant number EP/S016406/1.</b>
 
-There are several ways to run ```StrEmbed-5-4```, which are described below and in more detail in the user manual. The simplest is to download the latest release, which contains all the Python scripts and a standalone executable file. To run StrEmbed-5-4 you can then do one of the following:
+There are several ways to run ```StrEmbed-5-5```, which are described below and in more detail in the user manual. The simplest is to download the latest release, which contains all the Python scripts and a standalone executable file. To run ```StrEmbed-5-5``` you can then do one of the following:
 
 (1) Run as a Python script in your own environment. Two scripts are required:
 
