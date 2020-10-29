@@ -32,6 +32,8 @@ ___
 
 ___
 
+## Full guide
+
 There are several ways to run ```StrEmbed-5-5```, which are described below and in more detail in the user manual. The simplest is to download the latest release, which contains all the Python scripts and a standalone executable file. To run ```StrEmbed-5-5``` you can then do one of the following:
 
 (1) Run as a Python script in your own environment. Two scripts are required:
