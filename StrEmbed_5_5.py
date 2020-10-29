@@ -962,9 +962,6 @@ class MainWindow(wx.Frame):
                 print('List of assemblies:', _list)
                 self.selector_1.Set(_list)
                 self.selector_2.Set(_list)
-                
-                
-                
             except:
                 print('Could not reset assembly selector tools')
 
@@ -1504,7 +1501,7 @@ class MainWindow(wx.Frame):
         for item in _selected:
             tree_item = self._active.ctc_dict[item]
             self._active.partTree_ctc.SetItemTextColour(tree_item, self._highlight_colour)
-        print('Changing item property and finding affects items...')
+        print('Changing item property and finding affected items...')
 
 
 
@@ -2504,16 +2501,18 @@ class MainWindow(wx.Frame):
 
         self.AddText('Tree reconciliation running...')
 
-        _a1 = self.selector_1.GetSelection()
-        _a1 = self.selector_1.GetString(_a1)
-        _a1 = [self.assembly_manager[k] for k in self.assembly_manager if k.name == _a1][-1]
+        try:
+            _a1 = self.selector_1.GetSelection()
+            _a1 = self.selector_1.GetString(_a1)
+            _a1 = [self.assembly_manager[k] for k in self.assembly_manager if k.name == _a1][-1]
 
-        _a2 = self.selector_2.GetSelection()
-        _a2 = self.selector_2.GetString(_a2)
-        _a2 = [self.assembly_manager[k] for k in self.assembly_manager if k.name == _a2][-1]
+            _a2 = self.selector_2.GetSelection()
+            _a2 = self.selector_2.GetString(_a2)
+            _a2 = [self.assembly_manager[k] for k in self.assembly_manager if k.name == _a2][-1]
+        except:
+            self.AddText('Failed to find assemblies for reconciliation')
+            return
 
-
-        # paths, cost, cost_from_edits, node_edits, edge_edits = StepParse.Reconcile(self.assembly, self.assembly.alt)
         paths, cost, cost_from_edits, node_edits, edge_edits = StepParse.Reconcile(_a1, _a2)
 
         _textout = 'Node edits: {}\nEdge edits: {}\nTotal cost (Networkx): {}\nTotal cost (no. of edits): {}'.format(
@@ -2521,11 +2520,6 @@ class MainWindow(wx.Frame):
 
         self.AddText('Tree reconciliation finished')
         self.DoNothingDialog(event, _textout)
-
-
-
-    # ''' Map nodes in two graphs '''
-    # def create_map(self, a1, a2):
 
 
 
@@ -2556,7 +2550,6 @@ class MainWindow(wx.Frame):
         print('Assemblies selected:')
         print(_name1)
         print(_name2)
-
 
         a1 = [el for el in self.assembly_manager if el.name == _name1][0]
         a1 = self.assembly_manager[a1]
