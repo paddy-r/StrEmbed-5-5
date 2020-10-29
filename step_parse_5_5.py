@@ -19,7 +19,8 @@
 # Removed treelib entirely, now using networkx for all operations
 # A lot of old functionality replaced with simpler networkx methods
 
-
+'''HR 11/08/20 onwards
+Version 5.5'''
 
 # Ordered dictionary
 from collections import OrderedDict as odict
@@ -49,7 +50,8 @@ import networkx as nx
 import os
 
 # HR 10/7/20 All python-occ imports for 3D viewer
-from OCC.Core.TopoDS import TopoDS_Shape, TopoDS_Solid, TopoDS_Compound
+# from OCC.Core.TopoDS import TopoDS_Shape
+from OCC.Core.TopoDS import TopoDS_Solid, TopoDS_Compound
 # from OCC.Core.BRepMesh import BRepMesh_IncrementalMesh
 # from OCC.Core.StlAPI import stlapi_Read, StlAPI_Writer
 # from OCC.Core.BRep import BRep_Builder
@@ -59,7 +61,8 @@ from OCC.Core.TopoDS import TopoDS_Shape, TopoDS_Solid, TopoDS_Compound
 # from OCC.Core.IGESControl import IGESControl_Reader, IGESControl_Writer
 # from OCC.Core.STEPControl import STEPControl_Reader, STEPControl_Writer, STEPControl_AsIs
 # from OCC.Core.Interface import Interface_Static_SetCVal
-from OCC.Core.IFSelect import IFSelect_RetDone, IFSelect_ItemsByEntity
+from OCC.Core.IFSelect import IFSelect_RetDone
+# from OCC.Core.IFSelect import IFSelect_ItemsByEntity
 from OCC.Core.TDocStd import TDocStd_Document
 from OCC.Core.XCAFDoc import (XCAFDoc_DocumentTool_ShapeTool,
                               XCAFDoc_DocumentTool_ColorTool)
@@ -85,6 +88,14 @@ class StepParse(nx.DiGraph):
            self.topo_types = (TopoDS_Solid, TopoDS_Compound)
 
 
+    @property
+    def new_id(self):
+        if not hasattr(self, 'id_counter'):
+            self.id_counter = 0
+        self.id_counter += 1
+        return self.id_counter
+
+
 
     # OVERRIDDEN METHODS TO ADD LABELS TO NODES WHEN CREATED
     # ---
@@ -92,11 +103,12 @@ class StepParse(nx.DiGraph):
 
 
 
+    # HR 08/10/20: "add_node" edited, others not
     # # Overridden to add label to node upon creation
-    # def add_node(self, node, **attr):
+    # def add_node(self, node, text, label, **attr):
     #     super().add_node(node, **attr)
-    #     self.nodes[node]['label'] = node
-    #     # print('Adding node {} via "add_node"'.format(node))
+    #     self.nodes[node]['text'] = text
+    #     self.nodes[node]['label'] = label
 
 
 
@@ -106,7 +118,7 @@ class StepParse(nx.DiGraph):
     #     super().add_edge(node1, node2, **attr)
     #     self.nodes[node1]['label'] = node1
     #     self.nodes[node2]['label'] = node2
-    #     # print('Adding edge {} via "add_edge"'.format((node1, node2)))
+    #     # print('Adding edge {} via overridden "add_edge"'.format((node1, node2)))
 
 
 
@@ -119,7 +131,7 @@ class StepParse(nx.DiGraph):
     #     for node in node_list:
     #         self.nodes[node]['label'] = node
     #         print('Adding label to node ', node)
-    #     # print('Adding nodes {} via "add_nodes_from"'.format(node_list))
+    #     # print('Adding nodes {} via overridden "add_nodes_from"'.format(node_list))
 
 
 
@@ -134,7 +146,7 @@ class StepParse(nx.DiGraph):
     #         self.nodes[edge[0]]['label'] = edge[0]
     #         self.nodes[edge[1]]['label'] = edge[1]
     #         print('Adding labels to nodes {} via "add_edges_from"'.format(edge))
-    #     # print('Adding edges {} via "add_edges_from"'.format(edge_list))
+    #     # print('Adding edges {} via overridden "add_edges_from"'.format(edge_list))
 
 
 
@@ -273,11 +285,7 @@ class StepParse(nx.DiGraph):
         self.root_type_refs = set(self.parent_refs) - set(self.child_refs)
 
         # Create simple parts dictionary (ref + label)
-        # print(self.prod_all_refs)
         self.part_dict     = {el[0]:el[3] for el in self.prod_all_refs}
-
-        # print('Parent:   ', self.parent_refs)
-        # print('Children: ', self.child_refs)
 
 
 
@@ -288,31 +296,56 @@ class StepParse(nx.DiGraph):
 
         #TH: check if there are any parts to make a tree from, if not don't bother
         if self.part_dict == {}:
+            print('Cannot create tree: no parts present')
             return
 
         root_node_ref = list(self.root_type_refs)[0]
 
-        starter = 0
-        self.add_node(starter)
+        # #TH: created root node now fill in next layer
+        # #TH: create dict for tree, as each node needs a unique name
+        # starter = 0
+        # i = [starter] # Iterates through nodes
 
-        #TH: created root node now fill in next layer
-        #TH: create dict for tree, as each node needs a unique name
-        i = [starter] # Iterates through nodes
+        # self.step_dict = odict()
+        # self.step_dict[i[0]] = root_node_ref
+
+        # text = self.part_dict[self.step_dict[starter]]
+        # self.add_node(starter, text = text, label = text)
+
+        # def tree_next_layer(self, parent):
+        #     root_node = self.step_dict[i[0]]
+        #     for line in self.nauo_refs:
+        #         if line[1] == root_node:
+        #             i[0] += 1
+        #             self.step_dict[i[0]] = str(line[2])
+        #             text = self.part_dict[self.step_dict[i[0]]]
+        #             self.add_node(i[0], text = text, label = text)
+        #             print('Added node', i[0])
+        #             self.add_edge(parent, i[0])
+        #             tree_next_layer(self, i[0])
+
         self.step_dict = odict()
-        self.step_dict[i[0]] = root_node_ref
+
+        root_id = self.new_id
+        self.step_dict[root_id] = root_node_ref
+
+        text = self.part_dict[self.step_dict[root_id]]
+        self.add_node(root_id, text = text, label = text)
 
         def tree_next_layer(self, parent):
-            root_node = self.step_dict[i[0]]
+            root_node = self.step_dict[parent]
             for line in self.nauo_refs:
                 if line[1] == root_node:
-                    i[0] += 1
-                    self.step_dict[i[0]] = str(line[2])
-                    self.add_node(i[0])
-                    self.add_edge(parent, i[0])
-                    tree_next_layer(self, i[0])
+                    # i[0] += 1
+                    _id = self.new_id
+                    self.step_dict[_id] = str(line[2])
+                    text = self.part_dict[self.step_dict[_id]]
+                    self.add_node(_id, text = text, label = text)
+                    print('Added node', _id)
+                    self.add_edge(parent, _id)
+                    tree_next_layer(self, _id)
 
-        tree_next_layer(self, starter)
-        # self.appended = False
+        tree_next_layer(self, root_id)
 
         self.remove_redundants()
 
@@ -320,15 +353,35 @@ class StepParse(nx.DiGraph):
 
     def OCC_read_file(self, filename):
         #######################################################################
-        ## HR 14/7/20
-        ## All python-occ intialisation for 3D view
-        ## Adapted from src/Extend/DataExchange.py script from python-occ, here:
-        ## https://github.com/tpaviot/pythonocc-core
+        """
+        HR 14/7/20
+        All pythonocc intialisation for 3D view
+        Adapted from src/Extend/DataExchange.py script from python-occ, here:
+        https://github.com/tpaviot/pythonocc-core
+        Copyright info below
+        """
+        
+        ##Copyright 2018 Thomas Paviot (tpaviot@gmail.com)
+        ##
+        ##This file is part of pythonOCC.
+        ##
+        ##pythonOCC is free software: you can redistribute it and/or modify
+        ##it under the terms of the GNU Lesser General Public License as published by
+        ##the Free Software Foundation, either version 3 of the License, or
+        ##(at your option) any later version.
+        ##
+        ##pythonOCC is distributed in the hope that it will be useful,
+        ##but WITHOUT ANY WARRANTY; without even the implied warranty of
+        ##MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+        ##GNU Lesser General Public License for more details.
+        ##
+        ##You should have received a copy of the GNU Lesser General Public License
+        ##along with pythonOCC.  If not, see <http://www.gnu.org/licenses/>.
 
         # Changed to odict to allow direct mapping to step_dict (see later)
         output_shapes = odict()
 
-        # Create an handle to a document
+        # Create a handle to a document
         doc = TDocStd_Document(TCollection_ExtendedString("pythonocc-doc"))
 
         # Get root assembly
@@ -476,6 +529,11 @@ class StepParse(nx.DiGraph):
 
         # Map master IDs to OCC objects
         self.OCC_dict = dict(zip(tree_list, OCC_list))
+
+        print('\nOCC dict:')
+        for k,v in self.OCC_dict.items():
+            print(k,v)
+        print('\n')
         #######################################################################
 
 
@@ -505,21 +563,10 @@ class StepParse(nx.DiGraph):
             print('Removing node ', _node)
             self.remove_node(_node)
 
-        # # Check for loose nodes
-        # loose_nodes = [node for node in self.nodes if self.out_degree[node] == 0 and self.in_degree[node] == 0]
-
-        # print('Check: loose nodes (i.e. no in or out degree): ', loose_nodes)
-
-        # if not loose_nodes:
-        #     print('All redundant (i.e. single-child) sub-assemblies removed...')
-        #     print('...as not compatible with lattice representation')
-        # else:
-        #     print('Some loose nodes remain: redundant sub-assemblies not fully removed')
-
 
 
     # Finds root of graph containing reference node, which is passed for speed;
-    # otherwise start with first in node list (as any will do)
+    # otherwise start with first in node list (as any random one will do)
     def get_root(self, node = None):
 
         # root = [el for el in self.nodes if self.in_degree(el) == 0][0]
@@ -885,6 +932,7 @@ class StepParse(nx.DiGraph):
             remainder -= last_comb
 
         return _items
+
 
 
     def similarity(self, str1, str2):
