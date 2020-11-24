@@ -130,12 +130,6 @@ class MyParse(StepParse):
         super().__init__(*args, **kwargs)
         self._id = _id
 
-    # Overridden to add label to node upon creation
-    def add_node(self, node, text, label, **attr):
-        super().add_node(node, **attr)
-        self.nodes[node]['text'] = text
-        self.nodes[node]['label'] = label
-
 
 
 class MyTree(ctc.CustomTreeCtrl):
@@ -620,7 +614,7 @@ class NotebookPanel(wx.Panel):
 
         ## Discard pile and alternative assembly
         # self.discarded = StepParse()
-        self.alt       = StepParse()
+        self.alt = StepParse()
 
         self.edge_alt_dict = {}
         self.node_alt_dict = {}
@@ -932,8 +926,104 @@ class MainWindow(wx.Frame):
 
 
 
+    def get_selected_assemblies(self):
+
+        self.AddText('Trying to get selected assemblies...')
+
+        if self.selector_1.GetSelection() == wx.NOT_FOUND or self.selector_2.GetSelection() == wx.NOT_FOUND:
+            self.AddText('Two assemblies not selected')
+            return
+
+        _s1 = self.selector_1.GetSelection()
+        _s2 = self.selector_2.GetSelection()
+
+        if _s1 == _s2:
+            self.AddText('Two different assemblies must be selected')
+            return None
+
+        _name1 = self.selector_1.GetString(_s1)
+        _name2 = self.selector_1.GetString(_s2)
+        self.AddText('Assemblies selected:')
+        print(_name1)
+        print(_name2)
+
+        a1 = [el for el in self.assembly_manager if el.name == _name1][0]
+        a1 = self.assembly_manager[a1]
+        a2 = [el for el in self.assembly_manager if el.name == _name2][0]
+        a2 = self.assembly_manager[a2]
+
+        return a1, a2
+
+
+
     def OnMapAssemblies(self, event):
+
         print('Mapping assembly elements...')
+        _assemblies = self.get_selected_assemblies()
+
+        if not _assemblies:
+            self.AddText('Could not get assemblies')
+            return None
+
+        a1 = _assemblies[0]
+        a2 = _assemblies[1]
+
+        _mapped, _unmapped = StepParse.map_nodes(a1, a2)
+        self.AddText('Done mapping nodes')
+        print('Mapped nodes: ', _mapped)
+        print('Unmapped nodes: ', _unmapped)
+
+
+
+    def OnCalcSim(self, event):
+
+        self.AddText('Calculate similarity button pressed')
+
+        _assemblies = self.get_selected_assemblies()
+
+        if not _assemblies:
+            self.AddText('Could not get assemblies')
+            return None
+
+        a1 = _assemblies[0]
+        a2 = _assemblies[1]
+        _map = {}
+
+        l1 = a1.leaves
+        l2 = a2.leaves
+
+        for n1 in l1:
+            for n2 in l2:
+                _map[(n1, n2)] = StepParse.similarity(a1.nodes[n1]['label'], a2.nodes[n2]['label'])
+
+        _g = nx.compose(a1,a2)
+        print('Nodes:', _g.nodes)
+        print('Edges:', _g.edges)
+
+        return _map
+
+
+
+    def OnRecon(self, event = None):
+
+        self.AddText('Tree reconciliation running...')
+
+        _assemblies = self.get_selected_assemblies()
+
+        if not _assemblies:
+            self.AddText('Could not get assemblies')
+            return None
+
+        a1 = _assemblies[0]
+        a2 = _assemblies[1]
+
+        paths, cost, cost_from_edits, node_edits, edge_edits = StepParse.Reconcile(a1, a2)
+
+        _textout = 'Node edits: {}\nEdge edits: {}\nTotal cost (Networkx): {}\nTotal cost (no. of edits): {}'.format(
+            node_edits, edge_edits, cost, cost_from_edits)
+
+        self.AddText('Tree reconciliation finished')
+        self.DoNothingDialog(event, _textout)
 
 
 
@@ -2209,10 +2299,10 @@ class MainWindow(wx.Frame):
         # MAIN "FLATTEN" ALGORITHM
         # ---
         # Get all children of item
-        children_      = nx.descendants(self.assembly, id_)
+        children_ = nx.descendants(self.assembly, id_)
         children_parts = [el for el in children_ if el in leaves]
         print('Children parts = ', children_parts)
-        children_ass   = [el for el in children_ if not el in leaves]
+        children_ass = [el for el in children_ if not el in leaves]
         print('Children assemblies = ', children_ass)
 
         # Move all children that are indivisible parts
@@ -2494,85 +2584,6 @@ class MainWindow(wx.Frame):
         else:
             self._active.partTree_ctc.reverse_sort = True
         self._active.partTree_ctc.SortChildren(item)
-
-
-
-    def OnRecon(self, event = None):
-
-        self.AddText('Tree reconciliation running...')
-
-        try:
-            _a1 = self.selector_1.GetSelection()
-            _a1 = self.selector_1.GetString(_a1)
-            _a1 = [self.assembly_manager[k] for k in self.assembly_manager if k.name == _a1][-1]
-
-            _a2 = self.selector_2.GetSelection()
-            _a2 = self.selector_2.GetString(_a2)
-            _a2 = [self.assembly_manager[k] for k in self.assembly_manager if k.name == _a2][-1]
-        except:
-            self.AddText('Failed to find assemblies for reconciliation')
-            return
-
-        paths, cost, cost_from_edits, node_edits, edge_edits = StepParse.Reconcile(_a1, _a2)
-
-        _textout = 'Node edits: {}\nEdge edits: {}\nTotal cost (Networkx): {}\nTotal cost (no. of edits): {}'.format(
-            node_edits, edge_edits, cost, cost_from_edits)
-
-        self.AddText('Tree reconciliation finished')
-        self.DoNothingDialog(event, _textout)
-
-
-
-    def OnCalcSim(self, event):
-
-        def similarity(str1, str2):
-            _lev_dist  = nltk.edit_distance(str1, str2)
-            _sim = 1 - _lev_dist/max(len(str1), len(str2))
-            print('L, S:', _lev_dist, _sim)
-            return _lev_dist, _sim
-
-
-
-        self.AddText('Calculate similarity button pressed')
-
-        if self.selector_1.GetSelection() == wx.NOT_FOUND or self.selector_2.GetSelection() == wx.NOT_FOUND:
-            print('Two assemblies not selected')
-            return
-
-        _s1 = self.selector_1.GetSelection()
-        _s2 = self.selector_2.GetSelection()
-        if _s1 == _s2:
-            print('Two different assemblies must be selected')
-            return
-
-        _name1 = self.selector_1.GetString(_s1)
-        _name2 = self.selector_1.GetString(_s2)
-        print('Assemblies selected:')
-        print(_name1)
-        print(_name2)
-
-        a1 = [el for el in self.assembly_manager if el.name == _name1][0]
-        a1 = self.assembly_manager[a1]
-        a2 = [el for el in self.assembly_manager if el.name == _name2][0]
-        a2 = self.assembly_manager[a2]
-        print(a1, a2)
-
-
-
-        _map = {}
-
-        l1 = a1.leaves
-        l2 = a2.leaves
-
-        for n1 in l1:
-            for n2 in l2:
-                _map[(n1, n2)] = similarity(a1.nodes[n1]['label'], a2.nodes[n2]['label'])
-
-        _g = nx.compose(a1,a2)
-        print('Nodes:', _g.nodes)
-        print('Edges:', _g.edges)
-
-        return _map
 
 
 
@@ -2885,6 +2896,7 @@ class MainWindow(wx.Frame):
 
     def AddText(self, msg):
         self.statbar.SetStatusText(msg)
+        print(msg)
 
 
 

@@ -103,6 +103,14 @@ class StepParse(nx.DiGraph):
 
 
 
+    # Overridden to add label to node upon creation
+    def add_node(self, node, text, label, **attr):
+        super().add_node(node, **attr)
+        self.nodes[node]['text'] = text
+        self.nodes[node]['label'] = label
+
+
+
     # HR 08/10/20: "add_node" edited, others not
     # # Overridden to add label to node upon creation
     # def add_node(self, node, text, label, **attr):
@@ -360,7 +368,7 @@ class StepParse(nx.DiGraph):
         https://github.com/tpaviot/pythonocc-core
         Copyright info below
         """
-        
+
         ##Copyright 2018 Thomas Paviot (tpaviot@gmail.com)
         ##
         ##This file is part of pythonOCC.
@@ -935,12 +943,465 @@ class StepParse(nx.DiGraph):
 
 
 
+    @classmethod
     def similarity(self, str1, str2):
 
-        _lev_dist  = nltk.edit_distance(str1, str2)
+        if type(str1) != str:
+            str1 = str(str1)
+        if type(str2) != str:
+            str2 = str(str2)
+
+        _lev_dist = nltk.edit_distance(str1, str2)
         _sim = 1 - _lev_dist/max(len(str1), len(str2))
 
         return _lev_dist, _sim
+
+
+
+    @classmethod
+    def node_sim(self, a1, a2, nodes1 = None, nodes2 = None, weight = [1,0,1,0,0], C1 = 0, C2 = 0):
+        ''' Weights apply to similarity of following metrics (by index):
+            0. Depth of nodes in tree (i.e. from root)
+            1. Number of siblings
+            2. Number of children
+            3. Name of parent '''
+
+        if nodes1 == None:
+            nodes1 = a1.nodes
+        if nodes2 == None:
+            nodes2 = a2.nodes
+
+        _r1 = a1.get_root()
+        _r2 = a2.get_root()
+
+        _sim_label = {}
+        _sim_depth = {}
+        _sim_sibs = {}
+        _sim_children = {}
+        _sim_parent = {}
+        _sim = {}
+
+        for n1 in nodes1:
+            _sim_label[n1] = {}
+            _sim_depth[n1] = {}
+            _sim_sibs[n1] = {}
+            _sim_children[n1] = {}
+            _sim_parent[n1] = {}
+            _sim[n1] = {}
+
+            for n2 in nodes2:
+
+                ''' Get node label similarity '''
+                _sim_label[n1][n2] = self.similarity(a1.nodes[n1]['label'], a2.nodes[n2]['label'])[1]
+
+
+
+                ''' Get tree-depth similarity '''
+                _d1 = nx.shortest_path_length(a1, _r1, n1)
+                _d2 = nx.shortest_path_length(a2, _r2, n2)
+                if (_d1 == 0) and (_d2 == 0):
+                    c = C1
+                elif (_d1 == 0) != (_d2 == 0):
+                    c = C2
+                else:
+                    c = min(_d1, _d2)/max(_d1, _d2)
+                _sim_depth[n1][n2] = c
+
+
+
+                ''' Get parents, where None is default if no parent... '''
+                _p1 = next(a1.predecessors(n1), None)
+                _p2 = next(a2.predecessors(n2), None)
+                ''' ...then get parent label similarity, if both parents exist '''
+                if (_p1 == None) and (_p2 == None):
+                    c = C1
+                elif (_p1 == None) != (_p2 == None):
+                    c = C2
+                else:
+                   c = self.similarity(a1.nodes[_p1]['label'], a2.nodes[_p2]['label'])[1]
+                _sim_parent[n1][n2] = c
+
+
+
+                ''' Get number of siblings... '''
+                try:
+                    _ns1 = len([el for el in a1.successors(_p1)]) - 1
+                    _ns2 = len([el for el in a2.successors(_p2)]) - 1
+                except:
+                    _ns1 = 0
+                    _ns2 = 0
+                ''' ...then get similarity '''
+                if (_ns1 == 0) and (_ns2 == 0):
+                    c = C1
+                elif (_ns1 == 0) != (_ns2 == 0):
+                    c = C2
+                else:
+                    c = min(_ns1, _ns2)/max(_ns1, _ns2)
+                _sim_sibs[n1][n2] = c
+
+
+
+                ''' Get number of children... '''
+                _nc1 = len([el for el in a1.successors(n1)])
+                _nc2 = len([el for el in a2.successors(n2)])
+                ''' ...then get similarity '''
+                if (_nc1 == 0) and (_nc2 == 0):
+                    c = C1
+                elif (_nc1 == 0) != (_nc2 == 0):
+                    c = C2
+                else:
+                    c = min(_nc1, _nc2)/max(_nc1, _nc2)
+                _sim_children[n1][n2] = c
+
+
+                _norm = sum(weight)
+                ''' Get total (aggregate) similarity '''
+                _sim[n1][n2] = (_sim_label[n1][n2]*weight[0] \
+                        + _sim_depth[n1][n2]*weight[1] \
+                        + _sim_parent[n1][n2]*weight[2] \
+                        + _sim_sibs[n1][n2]*weight[3] \
+                        + _sim_children[n1][n2]*weight[4])/_norm
+
+        return _sim, _sim_label, _sim_depth, _sim_parent, _sim_sibs, _sim_children
+
+
+
+    ''' Get all mappings by exact matching of field '''
+    @classmethod
+    def map_exact(self, a1, a2, nodes1 = None, nodes2 = None, _field = 'label'):
+
+        if (not nodes1) and (not nodes2):
+            nodes1 = a1.nodes
+            nodes2 = a2.nodes
+        elif (not nodes1) != (not nodes2):
+            print('One node set not present; cannot continue')
+            return None
+
+        _map = {}
+
+        _values = set([a1.nodes[el][_field] for el in a1.nodes])
+        _field_dict = {}
+
+        for el in _values:
+            _n1 = [_el for _el in a1.nodes if a1.nodes[_el][_field] == el]
+            _n2 = [_el for _el in a2.nodes if a2.nodes[_el][_field] == el]
+            if _n1 and _n2:
+                # If single-value mapping, then map...
+                if len(_n1) == 1 and len(_n2) == 1:
+                    if _n1[0] not in _map:
+                        _map[_n1[0]] = _n2[0]
+                # ...else create dupe dict entry
+                else:
+                    _field_dict[tuple(_n1)] = tuple(_n2)
+
+        return _field_dict, _map
+
+
+
+    ''' Get all single-occurrence similarity mappings '''
+    @classmethod
+    def get_singles(self, _sim):
+
+        _map = {}
+
+        for _k,_v in _sim.items():
+            _max = max([el for el in _v.values()])
+            _occurrences = sum(value == _max for value in _v.values())
+
+            if _occurrences == 1:
+                print('\nOnly one occurrence of max value; can map!')
+                print('_k, _v: ', _k, _v)
+
+                # Get key corresponding to max value
+                _key = [__k for __k,__v in _v.items() if __v == _max][-1]
+                # Make new mapping, checking for clashes (i.e. to avoid mapping more than one n1 to n2)
+                if _key not in _map.values():
+                    _map[_k] = _key
+
+        return _map
+
+
+
+    @classmethod
+    def remap_entries(self, k, v, _map, _sim):
+
+        # Start building new dupe map elements...
+        _toremove1 = [el for el in _map]
+        _toremove2 = [el for el in _map.values()]
+
+        _n1 = tuple([el for el in k if el not in _toremove1])
+        _n2 = tuple([el for el in v if el not in _toremove2])
+
+        # ...and new total sim dict entry
+        _newv = {_k:_v for _k,_v in _sim.items() if _k in _n1}
+        _klist = list(_newv)
+        for el in _klist:
+            for _el in _toremove2:
+                if _el in _newv[el]:
+                    _newv[el].pop(_el, None)
+
+        _mapnew = {}
+        _simnew = {}
+        # Check that n1 and n2 both have items in, otherwise would be redundant...
+        if (len(_n1) > 0) and (len(_n2) > 0):
+            # ...then actually create entries...
+            print('New dupe map entry: ', _n1, _n2, '\n')
+            print('New total similarity dict entry: ', _n1, _newv, '\n')
+            _mapnew[_n1] = _n2
+            _simnew[_n1] = _newv
+
+        return _mapnew, _simnew
+
+
+
+    @classmethod
+    def reform_entries(self, nodes1, nodes2, _sim):
+
+        _first = nodes1[0]
+        _firstdict = _sim[nodes1][_first]
+        print('\nFirst node sim dict: ', _firstdict)
+        _firstvalueset = set(_firstdict.values())
+        print('\nFirst node value set: ', _firstvalueset)
+
+        if len(_firstvalueset) == 1:
+            print('\nNo need to reform: only one similarity value, returning original entry')
+            return {nodes1:nodes2}
+
+        nodes1 = list(nodes1)
+        nodes2 = list(nodes2)
+
+        # _vlist = list(_sim.items())[0][1]
+        # _vlist = list(_valueset)
+        # print('\nvlist: ', _vlist)
+        # _sims = [_v for _k,_v in _vlist.items()]
+        _sims = list(_firstdict.values())
+        print('\nsims: ', _sims)
+
+        print('\nReforming sim groupings for node1 set and total sim values: \n', nodes1)
+
+        _newentries = {}
+
+        for el in _firstvalueset:
+
+            _i = [i for i,val in enumerate(_sims) if val == el]
+            _n1 = [nodes1[i] for i in _i]
+            _n2 = [nodes2[i] for i in _i]
+
+            print('\nIndices of ', el, ': ', _i)
+            print('New grouping: ', tuple(_n1), tuple(_n2))
+
+            # Reform grouping; no need to rebuild totals dict as not used after this
+            _newentries[tuple(_n1)] = tuple(_n2)
+
+        print('\nNew entries returned: ', _newentries)
+        return _newentries
+
+
+
+    @classmethod
+    def map_grouping(self, k, v):
+
+        _klist = sorted([el for el in k])
+        _vlist = sorted([el for el in v])
+
+        _toremove = []
+
+        _newmap = {}
+
+        ''' First match any with the same IDs... '''
+        for el in _klist:
+            if el in _vlist:
+                _newmap[el] = el
+                _toremove.append(el)
+
+        for el in _toremove:
+            _klist.remove(el)
+            _vlist.remove(el)
+
+        ''' ...then match the remainder in numerical order '''
+        # N.B. "zip" truncates to length of smaller list
+        if _klist and _vlist:
+            _remainder = dict(zip(_klist, _vlist))
+            print('Remainder: ', _remainder)
+            for _k,_v in _remainder.items():
+                _newmap[_k] = _v
+
+        return _newmap
+
+
+
+    @classmethod
+    def map_nodes(self, a1, a2, **kwargs):
+
+        # _tol = 0.95
+        # _tol2 = 0.5
+
+        _mapped = {}
+
+
+
+        '''
+        1.  Easy part of mapping: exact 1:1 mappings
+            and get dupe map for any unmapped exact matches
+        '''
+        _dupemap, _newitems = StepParse.map_exact(a1,a2)
+        print('Adding newitems...', _newitems)
+        _mapped.update(_newitems)
+
+
+
+        ''' Then calculate similarity matrix for each duplicate group
+            This effectively allows matching by similarity components
+            other than (but also including) exact node-name matches,
+            e.g. parent node names (or whatever the user specifies
+            via "weight" values in "node_sim") '''
+
+        print('Calculating similarities for exact-duplicate groups...\n\n')
+
+        _sim = {}
+        for k,v in _dupemap.items():
+            # if 'weight' in kwargs:
+            #     weight = kwargs['weights']
+            #     if len(weight) == 5:
+            #         _sim[k] = self.node_sim(a1, a2, k, v, weight = weight)
+            # else:
+            #     _sim[k] = self.node_sim(a1, a2, k, v)
+            _sim[k] = self.node_sim(a1, a2, k, v)
+
+        print('Done!\n\n')
+
+
+
+        ''' Get total similarity (i.e. sum of all measures)
+            "_sim" contains each separately; [0] element is total value '''
+        _totals = {k:v[0] for k,v in _sim.items()}
+
+
+
+        '''
+        2.  Get all singular mappings within duplicate groupings,
+            i.e. occurrence of max value is one, and remove from grouping
+        '''
+
+        _tomap = {k:v for k,v in _dupemap.items()}
+        _totalscopy = {k:v for k,v in _totals.items()}
+
+        for k,v in _tomap.items():
+
+            ''' Get singular mappings and update global map '''
+            _newlymapped = self.get_singles(_totals[k])
+
+            # Remove old/create new dict items if any mappings made above
+            if _newlymapped:
+
+                # Add new entries to master map
+                _mapped.update(_newlymapped)
+
+                # Get new entries with already-mapped items removed...
+                _newmap, _newtotals = self.remap_entries(k, v, _newlymapped, _totalscopy[k])
+
+                # ...then update dicts with new entries
+                if _newmap:
+                    _dupemap.update(_newmap)
+                if _newtotals:
+                    _totals.update(_newtotals)
+
+                # Remove old entries with "pop";
+                # 'None' default in "pop" avoids exception if item not found
+                _dupemap.pop(k, None)
+                _totals.pop(k, None)
+
+
+
+        # ''' Get number of similarity values for each mapping group '''
+        # _valuelen = {}
+        # _valueset = {}
+
+        for k,v in _totals.items():
+
+            # Get first key and use values as representative of whole dict
+            # THIS IS AN UNJUSTIFIED ASSUMPTION!
+            # _key = list(k)[0]
+            # _valuedict = v[_key]
+            # _valueset[k] = set(_valuedict.values())
+            # _valuelen[k] = len(_valueset[k])
+
+            ''' Reform sub-groupings within each duplicate grouping
+                "_valuelen" should be two or more for all entries now,
+                as all single-occurrence values removed above '''
+        # _toreform = {k:v for k,v in _dupemap.items() if _valuelen[k] != 1}
+
+        # for k,v in _toreform.items():
+
+            _newentries = self.reform_entries(k, v, _totals[k])
+            _dupemap.update(_newentries)
+            _dupemap.pop(k, None)
+
+
+
+        '''
+        3.  Map remaining exact duplicate groupings, which all now have v = 1 due to reforming above
+        '''
+
+        _tomap = {k:v for k,v in _dupemap.items()}
+
+        for k,v in _tomap.items():
+
+            ''' Remove from map of duplicates '''
+            _dupemap.pop(k)
+
+            _newones = self.map_grouping(k, v)
+            _mapped.update(_newones)
+
+
+
+        ''' Put together all unmapped items '''
+        _u1 = [el for el in a1.nodes if el not in _mapped]
+        _u2 = [el for el in a2.nodes if el not in _mapped.values()]
+        print('\nUnmapped: ', _u1, _u2)
+
+
+
+        '''
+        4.  Now need to continue mapping all nodes without exact label matches
+        '''
+
+        ''' Get total similarity (i.e. sum of all measures), currently element [0] '''
+        print('Calculating similarities...\n\n')
+        _sim_u = self.node_sim(a1, a2, _u1, _u2, weight = [1,0,1,0,0])[0]
+        print('Done!\n\n')
+
+
+
+        ''' First job, as in previous sections: get any easy mappings where
+            max sim value appears once, and remove from dict '''
+        _newmap = self.get_singles(_sim_u)
+        if _newmap:
+            _mapped.update(_newmap)
+            print('Single-occurrence sim matches found: \n', _newmap)
+
+        for node1 in _newmap:
+            _u1.remove(node1)
+        for node2 in _newmap.values():
+            _u2.remove(node2)
+
+        _mapnew, _simnew = self.remap_entries(_u1, _u2, _newmap, _sim_u)
+        print('New mapping: ', _mapnew)
+        print('New sim map: ', _simnew)
+
+
+
+        ''' Next stage is to get sim groupings
+            i.e. where max sim value appears more than once '''
+        _newentries = self.reform_entries(tuple(_u1), tuple(_u2), _simnew)
+        print('New sim map by reforming: ', _newentries)
+
+
+
+        ''' Then map all groupings, w/ threshold '''
+
+
+        return _mapped, (_u1, _u2), _sim, _dupemap, _totals, _tomap, _sim_u
 
 
 
