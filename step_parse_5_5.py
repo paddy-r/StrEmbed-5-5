@@ -104,10 +104,14 @@ class StepParse(nx.DiGraph):
 
 
     # Overridden to add label to node upon creation
-    def add_node(self, node, text, label, **attr):
+    def add_node(self, node, text = None, label = None, **attr):
         super().add_node(node, **attr)
-        self.nodes[node]['text'] = text
-        self.nodes[node]['label'] = label
+        try:
+            self.nodes[node]['text'] = self.remove_suffixes(text)
+            self.nodes[node]['label'] = self.remove_suffixes(label)
+        except:
+            pass
+            # print('Could not remove part text and/or label suffixes (.step etc.)')
 
 
 
@@ -220,7 +224,7 @@ class StepParse(nx.DiGraph):
                         line_hold = line.rstrip()
                         line_type = 'prod'
                 else:
-                    prev_index = False
+                    # prev_index = False
                     #TH: if end of file and previous line was held
                     if 'ENDSEC;' in line:
                         if line_hold:
@@ -308,29 +312,6 @@ class StepParse(nx.DiGraph):
             return
 
         root_node_ref = list(self.root_type_refs)[0]
-
-        # #TH: created root node now fill in next layer
-        # #TH: create dict for tree, as each node needs a unique name
-        # starter = 0
-        # i = [starter] # Iterates through nodes
-
-        # self.step_dict = odict()
-        # self.step_dict[i[0]] = root_node_ref
-
-        # text = self.part_dict[self.step_dict[starter]]
-        # self.add_node(starter, text = text, label = text)
-
-        # def tree_next_layer(self, parent):
-        #     root_node = self.step_dict[i[0]]
-        #     for line in self.nauo_refs:
-        #         if line[1] == root_node:
-        #             i[0] += 1
-        #             self.step_dict[i[0]] = str(line[2])
-        #             text = self.part_dict[self.step_dict[i[0]]]
-        #             self.add_node(i[0], text = text, label = text)
-        #             print('Added node', i[0])
-        #             self.add_edge(parent, i[0])
-        #             tree_next_layer(self, i[0])
 
         self.step_dict = odict()
 
@@ -741,11 +722,6 @@ class StepParse(nx.DiGraph):
             self.leaf_dict[leaf] = i+1
             self.leaf_dict_inv[i+1] = leaf
 
-        # for node in ass.nodes:
-        #     n_p = ass.nodes[node]['n_p']
-        #     comb_ = comb(S_p[n_p], n_p)
-        #     ass.nodes[node]['x_comb'] = np.log(comb_)
-
         for k,v in self.levels_dict.items():
             S = self.S_p[k]
             for node in v:
@@ -971,6 +947,11 @@ class StepParse(nx.DiGraph):
         if nodes2 == None:
             nodes2 = a2.nodes
 
+        # if type(nodes1) is not list:
+        #     nodes1 = [nodes1]
+        # if type(nodes2) is not list:
+        #     nodes2 = [nodes2]
+
         _r1 = a1.get_root()
         _r2 = a2.get_root()
 
@@ -1066,6 +1047,15 @@ class StepParse(nx.DiGraph):
 
 
 
+    @classmethod
+    def remove_suffixes(self, _str):
+        suffixes = ('.stp', '.step', '.STP', '.STEP')
+        while _str.endswith(suffixes):
+            _str = os.path.splitext(_str)[0]
+        return _str
+
+
+
     ''' Get all mappings by exact matching of field '''
     @classmethod
     def map_exact(self, a1, a2, nodes1 = None, nodes2 = None, _field = 'label'):
@@ -1098,25 +1088,32 @@ class StepParse(nx.DiGraph):
 
 
 
-    ''' Get all single-occurrence similarity mappings '''
+    ''' Get mappings by max value
+        If "singles_only" is true, only map for single-occurrence max sim values
+        Else map anyway, which means first node2 found with max sim value is mapped '''
     @classmethod
-    def get_singles(self, _sim):
+    def get_by_max(self, _sim, singles_only = True):
 
         _map = {}
 
-        for _k,_v in _sim.items():
-            _max = max([el for el in _v.values()])
-            _occurrences = sum(value == _max for value in _v.values())
+        nodes1 = _sim.keys()
 
-            if _occurrences == 1:
-                print('\nOnly one occurrence of max value; can map!')
-                print('_k, _v: ', _k, _v)
+        ''' Loop over node1 items, which are contained in key of "_sim" '''
+        for node1 in nodes1:
+            _simdict = _sim[node1]
+            ''' Remove already-mapped entries node2 ID'''
+            for _done2 in _map.values():
+                _simdict.pop(_done2, None)
 
-                # Get key corresponding to max value
-                _key = [__k for __k,__v in _v.items() if __v == _max][-1]
-                # Make new mapping, checking for clashes (i.e. to avoid mapping more than one n1 to n2)
-                if _key not in _map.values():
-                    _map[_k] = _key
+            _max = max([el for el in _simdict.values()])
+            _occ = sum(value == _max for value in _simdict.values())
+            print('Occurrences = ', _occ)
+
+            ''' Get valid (i.e. not already mapped) k-v pairs in simdict '''
+            if (singles_only and _occ == 1) or not singles_only:
+                node2 = [_k for _k,_v in _simdict.items() if _v == _max][0]
+                _map[node1] = node2
+                print('\nMapped node1, node2, ', node1, node2)
 
         return _map
 
@@ -1154,28 +1151,31 @@ class StepParse(nx.DiGraph):
 
 
 
+    ''' HR 24/11/20
+        reform_entries not working as intended when tested with torch assembly
+        and HHC's alternative assembly with four bulbs
+        Problem is matching nodes within multiplicity groupings '''
     @classmethod
     def reform_entries(self, nodes1, nodes2, _sim):
-
-        _first = nodes1[0]
-        _firstdict = _sim[nodes1][_first]
-        print('\nFirst node sim dict: ', _firstdict)
-        _firstvalueset = set(_firstdict.values())
-        print('\nFirst node value set: ', _firstvalueset)
-
-        if len(_firstvalueset) == 1:
-            print('\nNo need to reform: only one similarity value, returning original entry')
-            return {nodes1:nodes2}
 
         nodes1 = list(nodes1)
         nodes2 = list(nodes2)
 
-        # _vlist = list(_sim.items())[0][1]
-        # _vlist = list(_valueset)
-        # print('\nvlist: ', _vlist)
-        # _sims = [_v for _k,_v in _vlist.items()]
+        ''' HR 26/11/20 Workaround to avoid problems for node sets with differing sizes
+            Larger problems with this method remain, as described above '''
+        if len(nodes1) != len(nodes2):
+            print('Length of n1, n2 (', len(nodes1), len(nodes2), ') not equal; returning original simdict')
+            return {tuple(nodes1):tuple(nodes2)}
+
+        _first = nodes1[0]
+        _firstdict = _sim[_first]
+        _firstvalueset = set(_firstdict.values())
+
+        if len(_firstvalueset) == 1:
+            print('\nNo need to reform: only one similarity value, returning original entry')
+            return {tuple(nodes1):tuple(nodes2)}
+
         _sims = list(_firstdict.values())
-        print('\nsims: ', _sims)
 
         print('\nReforming sim groupings for node1 set and total sim values: \n', nodes1)
 
@@ -1198,15 +1198,18 @@ class StepParse(nx.DiGraph):
 
 
 
+    ''' Map same-sim-value grouping
+        (a) by same node IDs or
+        (b) in numerical order '''
     @classmethod
-    def map_grouping(self, k, v):
+    def map_multi_grouping(self, k, v):
+
+        print('k,v: ', k,v)
+        _toremove = []
+        _newmap = {}
 
         _klist = sorted([el for el in k])
         _vlist = sorted([el for el in v])
-
-        _toremove = []
-
-        _newmap = {}
 
         ''' First match any with the same IDs... '''
         for el in _klist:
@@ -1222,19 +1225,16 @@ class StepParse(nx.DiGraph):
         # N.B. "zip" truncates to length of smaller list
         if _klist and _vlist:
             _remainder = dict(zip(_klist, _vlist))
-            print('Remainder: ', _remainder)
             for _k,_v in _remainder.items():
                 _newmap[_k] = _v
 
+        print('Done')
         return _newmap
 
 
 
     @classmethod
     def map_nodes(self, a1, a2, **kwargs):
-
-        # _tol = 0.95
-        # _tol2 = 0.5
 
         _mapped = {}
 
@@ -1260,12 +1260,6 @@ class StepParse(nx.DiGraph):
 
         _sim = {}
         for k,v in _dupemap.items():
-            # if 'weight' in kwargs:
-            #     weight = kwargs['weights']
-            #     if len(weight) == 5:
-            #         _sim[k] = self.node_sim(a1, a2, k, v, weight = weight)
-            # else:
-            #     _sim[k] = self.node_sim(a1, a2, k, v)
             _sim[k] = self.node_sim(a1, a2, k, v)
 
         print('Done!\n\n')
@@ -1289,7 +1283,7 @@ class StepParse(nx.DiGraph):
         for k,v in _tomap.items():
 
             ''' Get singular mappings and update global map '''
-            _newlymapped = self.get_singles(_totals[k])
+            _newlymapped = self.get_by_max(_totals[k])
 
             # Remove old/create new dict items if any mappings made above
             if _newlymapped:
@@ -1298,11 +1292,11 @@ class StepParse(nx.DiGraph):
                 _mapped.update(_newlymapped)
 
                 # Get new entries with already-mapped items removed...
-                _newmap, _newtotals = self.remap_entries(k, v, _newlymapped, _totalscopy[k])
+                _newdupe, _newtotals = self.remap_entries(k, v, _newlymapped, _totalscopy[k])
 
                 # ...then update dicts with new entries
-                if _newmap:
-                    _dupemap.update(_newmap)
+                if _newdupe:
+                    _dupemap.update(_newdupe)
                 if _newtotals:
                     _totals.update(_newtotals)
 
@@ -1313,29 +1307,16 @@ class StepParse(nx.DiGraph):
 
 
 
-        # ''' Get number of similarity values for each mapping group '''
-        # _valuelen = {}
-        # _valueset = {}
-
         for k,v in _totals.items():
-
-            # Get first key and use values as representative of whole dict
-            # THIS IS AN UNJUSTIFIED ASSUMPTION!
-            # _key = list(k)[0]
-            # _valuedict = v[_key]
-            # _valueset[k] = set(_valuedict.values())
-            # _valuelen[k] = len(_valueset[k])
 
             ''' Reform sub-groupings within each duplicate grouping
                 "_valuelen" should be two or more for all entries now,
                 as all single-occurrence values removed above '''
-        # _toreform = {k:v for k,v in _dupemap.items() if _valuelen[k] != 1}
 
-        # for k,v in _toreform.items():
-
-            _newentries = self.reform_entries(k, v, _totals[k])
-            _dupemap.update(_newentries)
+            _newentries = self.reform_entries(k, _dupemap[k], _totals[k])
+            print('New entries from reforming: ', _newentries)
             _dupemap.pop(k, None)
+            _dupemap.update(_newentries)
 
 
 
@@ -1345,12 +1326,14 @@ class StepParse(nx.DiGraph):
 
         _tomap = {k:v for k,v in _dupemap.items()}
 
+        print('_tomap: \n', _tomap)
+
         for k,v in _tomap.items():
 
             ''' Remove from map of duplicates '''
             _dupemap.pop(k)
 
-            _newones = self.map_grouping(k, v)
+            _newones = self.map_multi_grouping(k, v)
             _mapped.update(_newones)
 
 
@@ -1368,14 +1351,14 @@ class StepParse(nx.DiGraph):
 
         ''' Get total similarity (i.e. sum of all measures), currently element [0] '''
         print('Calculating similarities...\n\n')
+        print('Node set are: ', _u1, _u2)
+        # _sim_u = self.node_sim(a1, a2, _u1, _u2, weight = [1,0.25,0.5,0.1,0.1])[0]
         _sim_u = self.node_sim(a1, a2, _u1, _u2, weight = [1,0,1,0,0])[0]
-        print('Done!\n\n')
-
-
+        print('Done!\n')
 
         ''' First job, as in previous sections: get any easy mappings where
             max sim value appears once, and remove from dict '''
-        _newmap = self.get_singles(_sim_u)
+        _newmap = self.get_by_max(_sim_u)
         if _newmap:
             _mapped.update(_newmap)
             print('Single-occurrence sim matches found: \n', _newmap)
@@ -1386,22 +1369,17 @@ class StepParse(nx.DiGraph):
             _u2.remove(node2)
 
         _mapnew, _simnew = self.remap_entries(_u1, _u2, _newmap, _sim_u)
-        print('New mapping: ', _mapnew)
-        print('New sim map: ', _simnew)
+        _mapped.update(_mapnew)
+
+
+        # ''' Next stage is to get sim groupings
+        #     i.e. where max sim value appears more than once '''
+        # _newentries = self.reform_entries(tuple(_u1), tuple(_u2), _simnew)
+        # print('New sim map by reforming: ', _newentries)
 
 
 
-        ''' Next stage is to get sim groupings
-            i.e. where max sim value appears more than once '''
-        _newentries = self.reform_entries(tuple(_u1), tuple(_u2), _simnew)
-        print('New sim map by reforming: ', _newentries)
-
-
-
-        ''' Then map all groupings, w/ threshold '''
-
-
-        return _mapped, (_u1, _u2), _sim, _dupemap, _totals, _tomap, _sim_u
+        return _mapped, (_u1, _u2), _sim, _dupemap, _totals, _tomap, _simnew
 
 
 
@@ -1425,16 +1403,6 @@ class StepParse(nx.DiGraph):
         # Method of assembly class (StepParse) to set item tags to their IDs
         a1.set_all_tags()
         a2.set_all_tags()
-
-        # for a in [a1, a2]:
-
-        #     print('\nleaves:', a.leaves, '\n')
-        #     for node in a.nodes:
-        #         print('node ', node, 'tag: ', a.nodes[node]['tag'])
-        #     print('\n')
-        #     for u,v in a.edges:
-        #         print('edge ', u,v,  'tag: ', a.edges[(u,v)]['tag'])
-        #     print('\n')
 
 
 

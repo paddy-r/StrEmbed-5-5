@@ -157,8 +157,6 @@ class MyTree(ctc.CustomTreeCtrl):
         else:
             t1 = self.GetPyData(item1)['sort_id']
             t2 = self.GetPyData(item2)['sort_id']
-            # print('item 1 PyData = ', t1)
-            # print('item 2 PyData = ', t2)
 
         if self.reverse_sort:
             reverse = -1
@@ -242,7 +240,7 @@ class ShapeRenderer(OCCViewer.Viewer3d):
     # Adapted/simplified from OffScreenRenderer in OCCViewer <- OCC.Display
     # Dumps render of shape to jpeg file
     def __init__(self, screen_size = (1000,1000)):
-        super().__init__(None)
+        super().__init__()
         self.Create()
         self.View.SetBackgroundColor(Quantity_Color(Quantity_NOC_WHITE))
         self.SetSize(screen_size[0], screen_size[1])
@@ -367,8 +365,12 @@ class wxViewer3d(wxBaseViewer):
         self.dragStartPos = None
 
     def InitDriver(self):
-        self._display = OCCViewer.Viewer3d(self.GetWinId())
-        self._display.Create()
+        ''' HR 26/12/20 modified to pass window handle to "Create" rather than "__init__""
+            If handle not passed, renderer is off-screen (see OCCViewer) '''
+        # self._display = OCCViewer.Viewer3d(self.GetWinId())
+        # self._display.Create()
+        self._display = OCCViewer.Viewer3d()
+        self._display.Create(self.GetWinId())
         self._display.SetModeShaded()
         self._inited = True
 
@@ -1366,10 +1368,12 @@ class MainWindow(wx.Frame):
             # if part in self.assembly.OCC_dict:
             shape = self.assembly.OCC_dict[part]
             label, c = self.assembly.shapes[shape]
-            ais_shape = self._active.occ_panel._display.DisplayShape(shape, color = Quantity_Color(c.Red(),
-                                                                                                   c.Green(),
-                                                                                                   c.Blue(),
-                                                                                                   Quantity_TOC_RGB), transparency = transparency)
+            ais_shape = self._active.occ_panel._display.DisplayShape(shape,
+                                                                     color = Quantity_Color(c.Red(),
+                                                                                            c.Green(),
+                                                                                            c.Blue(),
+                                                                                            Quantity_TOC_RGB),
+                                                                     transparency = transparency)
 
         self._active.occ_panel._display.EraseAll()
 
