@@ -188,6 +188,7 @@ class StepParse(nx.DiGraph):
         line_type = ''
 
         # Find all search lines
+        print('Filename: ', step_filename)
         with open(step_filename) as f:
             for line in f:
                 # TH: read pointer of lines as they are read, so if the file has text wrap it will notice and add it to the following lines
