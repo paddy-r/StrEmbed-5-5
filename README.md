@@ -1,5 +1,7 @@
 ## Quick start guide for running standalone executable
 
+[![name](https://zenodo.org/badge/doi/10.5281/zenodo.4555859.svg)](http://doi.org/10.5281/zenodo.4555859)
+
 Go to the latest release *via* the "Releases" tab, then:
 
 1. Download the source code file bundle (```.zip``` or ```.tar.gz``` format).
